@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prehistoric Jungle</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #canvas-container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: center;
+            position: relative;
+        }
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: rgba(255,255,255,0.7);
+            font-size: 14px;
+            pointer-events: none;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.8.0/lib/p5.js"></script>
+
+<base target="_self">
+
+
+    <div id="canvas-container"></div>
+    <div id="instructions">Click to erupt volcano · Move mouse to guide pterodactyls</div>
+
+    <script>
+        const sketch = function(p) {
+            // Global variables
+            let canvas;
+            let dinosaurs = [];
+            let pterodactyls = [];
+            let trees = [];
+            let particles = [];
+            let lavaParticles = [];
+            let clouds = [];
+            let volcano = {};
+            let eruptionIntensity = 0;
+            let eruptionTimer = 0;
+            let timeOfDay = 0.5;
+            let bgGradient;
+            let jungleSounds = [];
+            let isMobile = false;
+            let lastMouseMove = 0;
+            let mouseAttraction = 0;
+
+            // Color palettes
+            const jungleColors = {
+                foliage: ['#2d5a27', '#3a7a32', '#4d9c42', '#5cb14d'],
+                bark: ['#5e4a3a', '#6d5a4b', '#8a715c', '#a58a6e'],
+                dinosaur: ['#6b8c42', '#7d9c5a', '#8fb473', '#a5c98c'],
+                sky: [
+                    p.color(30, 50, 90),
+                    p.color(60, 90, 120),
+                    p.color(120, 160, 200),
+                    p.color(180, 210, 230)
+                ]
+            };
+
+            p.preload = function() {
+                // No sound in this version to keep it simple
+            };
+
+            p.setup = function() {
+                isMobile = p.windowWidth < 768;
+                canvas = p.createCanvas(p.min(1200, p.windowWidth - 40), p.windowHeight * 0.9);
+                canvas.parent('canvas-container');
+                p.frameRate(30);
+
+                // Create background gradient
+                bgGradient = p.createGraphics(p.width, p.height);
+                drawBackgroundGradient();
+
+                // Initialize elements
+                createVolcano();
+                createTrees(50);
+                createDinosaurs(8);
+                createPterodactyls(5);
+                createClouds(10);
+            };
+
+            function drawBackgroundGradient() {
+                let topColor = p.lerpColor(
+                    p.color(10, 20, 40),
+                    p.color(80, 120, 180),
+                    timeOfDay
+                );
+                let bottomColor = p.lerpColor(
+                    p.color(30, 60, 30),
+                    p.color(100, 150, 100),
+                    timeOfDay * 0.7
+                );
+
+                bgGradient.rectMode(p.CORNER);
+                for (let y = 0; y < bgGradient.height; y++) {
+                    let inter = p.map(y, 0, bgGradient.height, 0, 1);
+                    let c = p.lerpColor(topColor, bottomColor, inter);
+                    bgGradient.stroke(c);
+                    bgGradient.line(0, y, bgGradient.width, y);
+                }
+            }
+
+            function createVolcano() {
+                volcano = {
+                    x: p.width * 0.7,
+                    y: p.height * 0.6,
+                    width: p.width * 0.2,
+                    height: p.height * 0.4,
+                    smokeIntensity: 0,
+                    lavaLevel: 0
+                };
+            }
+
+            function createTrees(count) {
+                trees = [];
+                for (let i = 0; i < count; i++) {
+                    let x = p.random(p.width);
+                    let y = p.height * 0.6 + p.random(p.height * 0.4);
+                    let size = p.random(30, 80);
+                    trees.push({
+                        x: x,
+                        y: y,
+                        size: size,
+                        sway: p.random(0.1, 0.3),
+                        phase: p.random(p.TWO_PI),
+                        color: p.random(jungleColors.foliage),
+                        trunkColor: p.random(jungleColors.bark)
+                    });
+                }
+            }
+
+            function createDinosaurs(count) {
+                dinosaurs = [];
+                const types = ['trex', 'triceratops', 'stegosaurus'];
+                
+                for (let i = 0; i < count; i++) {
+                    let type = types[p.floor(p.random(types.length))];
+                    let x = p.random(p.width * 0.8);
+                    let y = p.height * 0.7 + p.random(p.height * 0.2);
+                    let size = type === 'trex' ? p.random(80, 120) : p.random(60, 90);
+                    
+                    dinosaurs.push({
+                        type: type,
+                        x: x,
+                        y: y,
+                        size: size,
+                        speed: p.random(0.5, 2),
+                        direction: p.random() > 0.5 ? 1 : -1,
+                        legPhase: p.random(p.TWO_PI),
+                        neckAngle: 0,
+                        targetX: x,
+                        targetY: y,
+                        color: p.lerpColor(
+                            p.color(jungleColors.dinosaur[0]),
+                            p.color(jungleColors.dinosaur[3]),
+                            p.random()
+                        ),
+                        scared: false,
+                        scaredTimer: 0
+                    });
+                }
+            }
+
+            function createPterodactyls(count) {
+                pterodactyls = [];
+                for (let i = 0; i < count; i++) {
+                    pterodactyls.push({
+                        x: p.random(p.width),
+                        y: p.random(p.height * 0.4),
+                        speed: p.random(2, 4),
+                        wingAngle: 0,
+                        wingSpeed: p.random(0.1, 0.3),
+                        targetX: p.random(p.width),
+                        targetY: p.random(p.height * 0.3),
+                        color: p.color(120, 100, 80),
+                        followMouse: false,
+                        diveTimer: 0
+                    });
+                }
+            }
+
+            function createClouds(count) {
+                clouds = [];
+                for (let i = 0; i < count; i++) {
+                    clouds.push({
+                        x: p.random(p.width),
+                        y: p.random(p.height * 0.3),
+                        width: p.random(100, 300),
+                        speed: p.random(0.2, 0.8),
+                        opacity: p.random(30, 80)
+                    });
+                }
+            }
+
+            p.draw = function() {
+                // Update time of day (slow cycle)
+                timeOfDay = 0.5 + p.sin(p.frameCount * 0.001) * 0.3;
+                
+                // Update elements
+                updateVolcano();
+                updateDinosaurs();
+                updatePterodactyls();
+                updateParticles();
+                updateLava();
+                updateClouds();
+                
+                // Draw everything
+                p.image(bgGradient, 0, 0);
+                drawSun();
+                drawClouds();
+                drawVolcano();
+                drawLava();
+                drawTrees();
+                drawDinosaurs();
+                drawPterodactyls();
+                drawParticles();
+                
+                // Handle mouse attraction for pterodactyls
+                if (p.millis() - lastMouseMove < 2000) {
+                    mouseAttraction = p.lerp(mouseAttraction, 1, 0.05);
+                } else {
+                    mouseAttraction = p.lerp(mouseAttraction, 0, 0.01);
+                }
+            };
+
+            function updateVolcano() {
+                // Eruption effects
+                if (eruptionIntensity > 0) {
+                    eruptionIntensity = p.max(0, eruptionIntensity - 0.005);
+                    volcano.smokeIntensity = eruptionIntensity;
+                    volcano.lavaLevel = p.lerp(0, 0.3, eruptionIntensity);
+                    
+                    // Add smoke particles during eruption
+                    if (p.frameCount % 2 === 0) {
+                        for (let i = 0; i < eruptionIntensity * 5; i++) {
+                            particles.push({
+                                x: volcano.x + p.random(-volcano.width * 0.3, volcano.width * 0.3),
+                                y: volcano.y - volcano.height * 0.9,
+                                size: p.random(10, 30),
+                                speedX: p.random(-1, 1),
+                                speedY: p.random(-3, -5),
+                                color: p.color(100, 100, 100, 150),
+                                life: p.random(100, 200),
+                                type: 'smoke'
+                            });
+                        }
+                    }
+                    
+                    // Add lava particles during eruption
+                    if (p.frameCount % 3 === 0 && eruptionIntensity > 0.5) {
+                        for (let i = 0; i < eruptionIntensity * 3; i++) {
+                            lavaParticles.push({
+                                x: volcano.x + p.random(-volcano.width * 0.2, volcano.width * 0.2),
+                                y: volcano.y - volcano.height * 0.7 + p.random(-20, 0),
+                                size: p.random(5, 15),
+                                speedX: p.random(-2, 2),
+                                speedY: p.random(-5, -8),
+                                color: p.color(255, p.random(100, 200), 0, 200),
+                                life: p.random(50, 100),
+                                type: 'lava'
+                            });
+                        }
+                    }
+                }
+                
+                // Random small eruptions
+                if (p.random() < 0.001 && eruptionIntensity < 0.3) {
+                    eruptionIntensity = p.random(0.1, 0.3);
+                }
+            }
+
+            function updateDinosaurs() {
+                for (let dino of dinosaurs) {
+                    // Scared behavior during eruption
+                    if (eruptionIntensity > 0.3 && !dino.scared) {
+                        dino.scared = true;
+                        dino.scaredTimer = p.floor(p.random(100, 200));
+                        dino.direction = dino.x < volcano.x ? -1 : 1;
+                        dino.speed *= 2;
+                    }
+                    
+                    if (dino.scared) {
+                        dino.scaredTimer--;
+                        if (dino.scaredTimer <= 0) {
+                            dino.scared = false;
+                            dino.speed /= 2;
+                        }
+                        
+                        dino.targetX = dino.x + dino.direction * 200;
+                        dino.targetY = dino.y + p.random(-50, 50);
+                    } else {
+                        // Normal wandering behavior
+                        if (p.random() < 0.01 || p.dist(dino.x, dino.y, dino.targetX, dino.targetY) < 20) {
+                            dino.targetX = dino.x + p.random(-100, 100);
+                            dino.targetY = dino.y + p.random(-30, 30);
+                            dino.direction = dino.targetX > dino.x ? 1 : -1;
+                        }
+                    }
+                    
+                    // Move toward target
+                    dino.x = p.lerp(dino.x, dino.targetX, 0.01 * dino.speed);
+                    dino.y = p.lerp(dino.y, dino.targetY, 0.01 * dino.speed);
+                    
+                    // Animation
+                    dino.legPhase += 0.1 * dino.speed;
+                    dino.neckAngle = p.sin(dino.legPhase * 2) * 0.2 * dino.speed;
+                }
+            }
+
+            function updatePterodactyls() {
+                for (let ptero of pterodactyls) {
+                    // Wing animation
+                    ptero.wingAngle += ptero.wingSpeed;
+                    
+                    // Update target if reached or randomly
+                    if (p.dist(ptero.x, ptero.y, ptero.targetX, ptero.targetY) < 30 || p.random() < 0.005) {
+                        if (ptero.diveTimer > 0) {
+                            ptero.diveTimer--;
+                            if (ptero.diveTimer === 0) {
+                                ptero.targetY = p.random(p.height * 0.2, p.height * 0.4);
+                            }
+                        } else {
+                            // Follow mouse if recently moved
+                            if (mouseAttraction > 0.5 && p.random() < 0.1) {
+                                ptero.targetX = p.lerp(ptero.targetX, p.mouseX, 0.3 * mouseAttraction);
+                                ptero.targetY = p.lerp(ptero.targetY, p.mouseY, 0.3 * mouseAttraction);
+                            } else {
+                                ptero.targetX = p.random(p.width);
+                                ptero.targetY = p.random(p.height * 0.2, p.height * 0.4);
+                            }
+                        }
+                    }
+                    
+                    // Move toward target
+                    ptero.x = p.lerp(ptero.x, ptero.targetX, 0.02);
+                    ptero.y = p.lerp(ptero.y, ptero.targetY, 0.02);
+                    
+                    // Avoid volcano during eruption
+                    if (eruptionIntensity > 0.3) {
+                        let volcanoDist = p.dist(ptero.x, ptero.y, volcano.x, volcano.y - volcano.height * 0.5);
+                        if (volcanoDist < 200) {
+                            let angle = p.atan2(ptero.y - (volcano.y - volcano.height * 0.5), ptero.x - volcano.x);
+                            ptero.targetX = ptero.x + p.cos(angle) * 300;
+                            ptero.targetY = ptero.y + p.sin(angle) * 300;
+                        }
+                    }
+                }
+            }
+
+            function updateParticles() {
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    let part = particles[i];
+                    part.x += part.speedX;
+                    part.y += part.speedY;
+                    part.life--;
+                    
+                    // Apply gravity to smoke
+                    if (part.type === 'smoke') {
+                        part.speedX *= 0.98;
+                        part.speedY *= 0.98;
+                        part.speedY += 0.05;
+                    }
+                    
+                    // Remove dead particles
+                    if (part.life <= 0 || part.y > p.height || part.x < 0 || part.x > p.width) {
+                        particles.splice(i, 1);
+                    }
+                }
+            }
+
+            function updateLava() {
+                for (let i = lavaParticles.length - 1; i >= 0; i--) {
+                    let lava = lavaParticles[i];
+                    lava.x += lava.speedX;
+                    lava.y += lava.speedY;
+                    lava.life--;
+                    lava.speedY += 0.2; // Gravity
+                    
+                    // Remove dead lava particles
+                    if (lava.life <= 0 || lava.y > p.height) {
+                        lavaParticles.splice(i, 1);
+                    }
+                }
+            }
+
+            function updateClouds() {
+                for (let cloud of clouds) {
+                    cloud.x += cloud.speed;
+                    if (cloud.x > p.width + cloud.width * 0.5) {
+                        cloud.x = -cloud.width * 0.5;
+                        cloud.y = p.random(p.height * 0.3);
+                    }
+                }
+            }
+
+            function drawSun() {
+                let sunX = p.width * 0.2;
+                let sunY = p.height * 0.2 + p.sin(timeOfDay * p.PI) * p.height * 0.1;
+                let sunSize = p.height * 0.1;
+                
+                p.push();
+                p.noStroke();
+                p.fill(255, 255 - timeOfDay * 100, 200 - timeOfDay * 150, 150);
+                p.drawingContext.filter = 'blur(10px)';
+                p.ellipse(sunX, sunY, sunSize * 2);
+                p.drawingContext.filter = 'none';
+                p.fill(255, 240 - timeOfDay * 100, 180 - timeOfDay * 120);
+                p.ellipse(sunX, sunY, sunSize);
+                p.pop();
+            }
+
+            function drawClouds() {
+                p.push();
+                p.noStroke();
+                for (let cloud of clouds) {
+                    p.fill(255, 255, 255, cloud.opacity);
+                    p.ellipse(cloud.x, cloud.y, cloud.width, cloud.width * 0.4);
+                    p.ellipse(cloud.x - cloud.width * 0.3, cloud.y + cloud.width * 0.1, cloud.width * 0.6, cloud.width * 0.3);
+                    p.ellipse(cloud.x + cloud.width * 0.3, cloud.y + cloud.width * 0.1, cloud.width * 0.6, cloud.width * 0.3);
+                }
+                p.pop();
+            }
+
+            function drawVolcano() {
+                p.push();
+                p.noStroke();
+                
+                // Volcano base
+                p.fill(80, 60, 50);
+                p.beginShape();
+                p.vertex(volcano.x - volcano.width * 0.5, volcano.y);
+                p.vertex(volcano.x - volcano.width * 0.3, volcano.y - volcano.height * 0.7);
+                p.vertex(volcano.x, volcano.y - volcano.height);
+                p.vertex(volcano.x + volcano.width * 0.3, volcano.y - volcano.height * 0.7);
+                p.vertex(volcano.x + volcano.width * 0.5, volcano.y);
+                p.endShape(p.CLOSE);
+                
+                // Crater
+                p.fill(60, 50, 40);
+                p.ellipse(volcano.x, volcano.y - volcano.height * 0.9, volcano.width * 0.4, volcano.width * 0.2);
+                
+                // Lava glow
+                if (eruptionIntensity > 0) {
+                    let glowAlpha = eruptionIntensity * 100;
+                    p.fill(255, 150, 0, glowAlpha);
+                    p.drawingContext.filter = 'blur(10px)';
+                    p.ellipse(volcano.x, volcano.y - volcano.height * 0.9, volcano.width * 0.6);
+                    p.drawingContext.filter = 'none';
+                }
+                
+                p.pop();
+            }
+
+            function drawLava() {
+                p.push();
+                p.noStroke();
+                
+                // Lava in crater
+                if (volcano.lavaLevel > 0) {
+                    p.fill(255, 100 + volcano.lavaLevel * 100, 0);
+                    p.ellipse(
+                        volcano.x, 
+                        volcano.y - volcano.height * 0.9 + volcano.height * 0.05 * (1 - volcano.lavaLevel), 
+                        volcano.width * 0.35 * volcano.lavaLevel, 
+                        volcano.width * 0.15 * volcano.lavaLevel
+                    );
+                    
+                    // Lava flow down sides
+                    p.beginShape();
+                    p.vertex(volcano.x - volcano.width * 0.2, volcano.y - volcano.height * 0.7);
+                    p.vertex(volcano.x - volcano.width * 0.15, volcano.y - volcano.height * 0.6);
+                    p.vertex(volcano.x - volcano.width * 0.1, volcano.y - volcano.height * 0.5);
+                    p.vertex(volcano.x - volcano.width * 0.05, volcano.y - volcano.height * 0.4);
+                    p.vertex(volcano.x, volcano.y - volcano.height * 0.3);
+                    p.vertex(volcano.x + volcano.width * 0.05, volcano.y - volcano.height * 0.4);
+                    p.vertex(volcano.x + volcano.width * 0.1, volcano.y - volcano.height * 0.5);
+                    p.vertex(volcano.x + volcano.width * 0.15, volcano.y - volcano.height * 0.6);
+                    p.vertex(volcano.x + volcano.width * 0.2, volcano.y - volcano.height * 0.7);
+                    p.endShape();
+                }
+                
+                // Lava particles
+                for (let lava of lavaParticles) {
+                    p.fill(lava.color);
+                    p.ellipse(lava.x, lava.y, lava.size);
+                }
+                
+                p.pop();
+            }
+
+            function drawTrees() {
+                p.push();
+                for (let tree of trees) {
+                    // Trunk
+                    p.fill(tree.trunkColor);
+                    p.rect(
+                        tree.x - tree.size * 0.1, 
+                        tree.y - tree.size * 0.8, 
+                        tree.size * 0.2, 
+                        tree.size * 0.8
+                    );
+                    
+                    // Leaves
+                    p.fill(tree.color);
+                    let sway = p.sin(tree.phase + p.frameCount * 0.02) * tree.sway;
+                    p.ellipse(
+                        tree.x + sway * tree.size, 
+                        tree.y - tree.size * 0.9, 
+                        tree.size * 0.8, 
+                        tree.size * 0.6
+                    );
+                    p.ellipse(
+                        tree.x - tree.size * 0.3 + sway * tree.size * 0.7, 
+                        tree.y - tree.size * 0.7, 
+                        tree.size * 0.6, 
+                        tree.size * 0.5
+                    );
+                    p.ellipse(
+                        tree.x + tree.size * 0.3 + sway * tree.size * 0.7, 
+                        tree.y - tree.size * 0.7, 
+                        tree.size * 0.6, 
+                        tree.size * 0.5
+                    );
+                    
+                    // Shake during eruption
+                    if (eruptionIntensity > 0.3) {
+                        tree.phase += p.random(-0.1, 0.1) * eruptionIntensity;
+                    }
+                }
+                p.pop();
+            }
+
+            function drawDinosaurs() {
+                p.push();
+                p.rectMode(p.CENTER);
+                p.ellipseMode(p.CENTER);
+                
+                for (let dino of dinosaurs) {
+                    p.push();
+                    p.translate(dino.x, dino.y);
+                    p.scale(dino.direction, 1);
+                    
+                    // Body
+                    p.fill(dino.color);
+                    p.ellipse(0, 0, dino.size * 0.8, dino.size * 0.5);
+                    
+                    if (dino.type === 'trex') {
+                        // T-Rex specific drawing
+                        // Head
+                        p.push();
+                        p.rotate(dino.neckAngle);
+                        p.ellipse(-dino.size * 0.4, -dino.size * 0.2, dino.size * 0.4, dino.size * 0.3);
+                        
+                        // Jaw
+                        p.arc(-dino.size * 0.5, -dino.size * 0.15, dino.size * 0.3, dino.size * 0.2, p.PI * 0.2, p.PI * 0.8);
+                        
+                        // Teeth
+                        p.fill(255, 250, 200);
+                        p.triangle(
+                            -dino.size * 0.55, -dino.size * 0.15,
+                            -dino.size * 0.5, -dino.size * 0.1,
+                            -dino.size * 0.45, -dino.size * 0.15
+                        );
+                        p.triangle(
+                            -dino.size * 0.55, -dino.size * 0.05,
+                            -dino.size * 0.5, -dino.size * 0.1,
+                            -dino.size * 0.45, -dino.size * 0.05
+                        );
+                        p.pop();
+                        
+                        // Arms
+                        p.ellipse(-dino.size * 0.2, -dino.size * 0.1, dino.size * 0.15, dino.size * 0.1);
+                        
+                        // Legs
+                        let legOffset = p.sin(dino.legPhase) * dino.size * 0.05;
+                        p.ellipse(dino.size * 0.2, dino.size * 0.15 + legOffset, dino.size * 0.2, dino.size * 0.15);
+                        p.ellipse(dino.size * 0.35, dino.size * 0.15 - legOffset, dino.size * 0.2, dino.size * 0.15);
+                        
+                        // Tail
+                        p.beginShape();
+                        p.vertex(dino.size * 0.4, 0);
+                        p.vertex(dino.size * 0.6, dino.size * 0.1);
+                        p.vertex(dino.size * 0.8, dino.size * 0.05);
+                        p.endShape();
+                        
+                    } else if (dino.type === 'triceratops') {
+                        // Triceratops specific drawing
+                        // Head frill
+                        p.arc(-dino.size * 0.5, -dino.size * 0.1, dino.size * 0.6, dino.size * 0.4, p.PI * 0.7, p.PI * 1.3);
+                        
+                        // Head
+                        p.ellipse(-dino.size * 0.4, -dino.size * 0.1, dino.size * 0.3, dino.size * 0.2);
+                        
+                        // Horns
+                        p.triangle(
+                            -dino.size * 0.5, -dino.size * 0.2,
+                            -dino.size * 0.45, -dino.size * 0.3,
+                            -dino.size * 0.4, -dino.size * 0.2
+                        );
+                        p.triangle(
+                            -dino.size * 0.35, -dino.size * 0.2,
+                            -dino.size * 0.3, -dino.size * 0.3,
+                            -dino.size * 0.25, -dino.size * 0.2
+                        );
+                        
+                        // Legs
+                        let legOffset = p.sin(dino.legPhase) * dino.size * 0.05;
+                        p.ellipse(-dino.size * 0.1, dino.size * 0.15 + legOffset, dino.size * 0.15, dino.size * 0.1);
+                        p.ellipse(dino.size * 0.1, dino.size * 0.15 - legOffset, dino.size * 0.15, dino.size * 0.1);
+                        p.ellipse(dino.size * 0.3, dino.size * 0.15 + legOffset, dino.size * 0.15, dino.size * 0.1);
+                        
+                        // Tail
+                        p.beginShape();
+                        p.vertex(dino.size * 0.4, 0);
+                        p.vertex(dino.size * 0.6, -dino.size * 0.1);
+                        p.endShape();
+                    }
+                    p.pop();
+                }
+                p.pop();
+            }
+
+            function drawPterodactyls() {
+                p.push();
+                for (let ptero of pterodactyls) {
+                    p.push();
+                    p.translate(ptero.x, ptero.y);
+                    
+                    // Body
+                    p.fill(ptero.color);
+                    p.ellipse(0, 0, 30, 15);
+                    
+                    // Head
+                    p.ellipse(-15, -5, 10, 8);
+                    
+                    // Beak
+                    p.triangle(-20, -5, -15, -5, -18, 0);
+                    
+                    // Wings
+                    let wingY = p.sin(ptero.wingAngle) * 15;
+                    p.beginShape();
+                    p.vertex(0, 0);
+                    p.vertex(40, wingY);
+                    p.vertex(80, 0);
+                    p.endShape();
+                    
+                    p.beginShape();
+                    p.vertex(0, 0);
+                    p.vertex(40, -wingY);
+                    p.vertex(80, 0);
+                    p.endShape();
+                    
+                    p.pop();
+                }
+                p.pop();
+            }
+
+            function drawParticles() {
+                p.push();
+                p.noStroke();
+                for (let part of particles) {
+                    p.fill(part.color);
+                    p.ellipse(part.x, part.y, part.size);
+                    
+                    // Add glow to smoke
+                    if (part.type === 'smoke') {
+                        p.drawingContext.filter = 'blur(3px)';
+                        p.ellipse(part.x, part.y, part.size * 1.5);
+                        p.drawingContext.filter = 'none';
+                    }
+                }
+                p.pop();
+            }
+
+            p.mousePressed = function() {
+                // Trigger volcano eruption on click
+                eruptionIntensity = p.constrain(eruptionIntensity + 0.5, 0, 1);
+                
+                // Make pterodactyls dive if clicked near them
+                for (let ptero of pterodactyls) {
+                    if (p.dist(p.mouseX, p.mouseY, ptero.x, ptero.y) < 100) {
+                        ptero.diveTimer = 60;
+                        ptero.targetY = p.height * 0.7;
+                    }
+                }
+            };
+
+            p.mouseMoved = function() {
+                lastMouseMove = p.millis();
+            };
+
+            p.windowResized = function() {
+                p.resizeCanvas(p.min(1200, p.windowWidth - 40), p.windowHeight * 0.9);
+                drawBackgroundGradient();
+                
+                // Adjust positions of elements
+                let widthRatio = p.width / canvas.width;
+                let heightRatio = p.height / canvas.height;
+                
+                for (let dino of dinosaurs) {
+                    dino.x *= widthRatio;
+                    dino.y *= heightRatio;
+                    dino.targetX *= widthRatio;
+                    dino.targetY *= heightRatio;
+                }
+                
+                for (let ptero of pterodactyls) {
+                    ptero.x *= widthRatio;
+                    ptero.y *= heightRatio;
+                    ptero.targetX *= widthRatio;
+                    ptero.targetY *= heightRatio;
+                }
+                
+                for (let tree of trees) {
+                    tree.x *= widthRatio;
+                    tree.y *= heightRatio;
+                }
+                
+                for (let cloud of clouds) {
+                    cloud.x *= widthRatio;
+                    cloud.y *= heightRatio;
+                }
+                
+                volcano.x *= widthRatio;
+                volcano.y *= heightRatio;
+                volcano.width *= widthRatio;
+                volcano.height *= heightRatio;
+            };
+        };
+
+        new p5(sketch);
+    </script>
+
+              
+          
+                
+          
+              
